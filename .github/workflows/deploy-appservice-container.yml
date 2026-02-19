@@ -34,26 +34,23 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve ACR login server
-        id: acr
-        uses: azure/cli@v2
-        with:
-          inlineScript: |
-            LOGIN_SERVER=$(az acr show --name "${{ vars.ACR_NAME }}" --query loginServer --output tsv)
-            echo "login_server=$LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+        run: |
+          LOGIN_SERVER=$(az acr show --name "${{ vars.ACR_NAME }}" --query loginServer --output tsv)
+          echo "ACR_LOGIN_SERVER=$LOGIN_SERVER" >> "$GITHUB_ENV"
+
+      - name: Docker login to ACR
+        run: |
+          ACR_TOKEN=$(az acr login --name "${{ vars.ACR_NAME }}" --expose-token --query accessToken --output tsv)
+          echo "$ACR_TOKEN" | docker login "$ACR_LOGIN_SERVER" --username "00000000-0000-0000-0000-000000000000" --password-stdin
 
       - name: Build and push image
-        uses: azure/cli@v2
-        with:
-          inlineScript: |
-            az acr login --name "${{ vars.ACR_NAME }}"
-            docker build -t "${{ steps.acr.outputs.login_server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" ./src
-            docker push "${{ steps.acr.outputs.login_server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+        run: |
+          docker build -t "$ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:${{ github.sha }}" ./src
+          docker push "$ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:${{ github.sha }}"
 
       - name: Deploy image to App Service
-        uses: azure/cli@v2
-        with:
-          inlineScript: |
-            az webapp config container set \
-              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-              --name "${{ vars.AZURE_WEB_APP_NAME }}" \
-              --container-image-name "${{ steps.acr.outputs.login_server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+        run: |
+          az webapp config container set \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_WEB_APP_NAME }}" \
+            --container-image-name "$ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:${{ github.sha }}"
